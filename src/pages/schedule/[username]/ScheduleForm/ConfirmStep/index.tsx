@@ -1,79 +1,106 @@
-import { useQuery } from '@tanstack/react-query'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Button, Text, TextArea, TextInput } from '@ignite-ui/react'
 import dayjs from 'dayjs'
 import { useRouter } from 'next/router'
-import { useState } from 'react'
-import { Calendar } from '../../../../../components/Calendar'
+import { CalendarBlank, Clock } from 'phosphor-react'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
 import { api } from '../../../../../lib/axios'
-import {
-  Container,
-  TimePicker,
-  TimePickerHeader,
-  TimePickerItem,
-  TimePickerList,
-} from './styles'
+import { ConfirmForm, FormActions, FormError, FormHeader } from './styles'
 
-interface Availability {
-  possibleTimes: number[]
-  availableTimes: number[]
+const confirmFormSchema = z.object({
+  name: z.string().min(3, { message: 'O nome precisa no mínimo 3 caracteres' }),
+  email: z.string().email({ message: 'Digite um e-mail válido' }),
+  observations: z.string().nullable(),
+})
+
+type ConfirmFormData = z.infer<typeof confirmFormSchema>
+
+interface ConfirmStepProps {
+  schedulingDate: Date
+  onCancelConfirmation: () => void
 }
 
-export function CalendarStep() {
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+export function ConfirmStep({
+  schedulingDate,
+  onCancelConfirmation,
+}: ConfirmStepProps) {
+  const {
+    register,
+    handleSubmit,
+    formState: { isSubmitting, errors },
+  } = useForm<ConfirmFormData>({
+    resolver: zodResolver(confirmFormSchema),
+  })
 
   const router = useRouter()
-
-  const isDateSelected = !!selectedDate
   const username = String(router.query.username)
 
-  const weekDay = selectedDate ? dayjs(selectedDate).format('dddd') : null
-  const describedDate = selectedDate
-    ? dayjs(selectedDate).format('DD[ de ]MMMM')
-    : null
+  async function handleConfirmScheduling(data: ConfirmFormData) {
+    const { name, email, observations } = data
 
-  const selectedDateWithoutTime = selectedDate
-    ? dayjs(selectedDate).format('YYYY-MM-DD')
-    : null
+    await api.post(`/users/${username}/schedule`, {
+      name,
+      email,
+      observations,
+      date: schedulingDate,
+    })
 
-  const { data: availability } = useQuery<Availability>(
-    ['availability', selectedDateWithoutTime],
-    async () => {
-      const response = await api.get(`/users/${username}/availability`, {
-        params: {
-          date: selectedDateWithoutTime,
-        },
-      })
+    onCancelConfirmation()
+  }
 
-      return response.data
-    },
-    {
-      enabled: !!selectedDate,
-    },
-  )
+  const describedDate = dayjs(schedulingDate).format('DD[ de ]MMMM[ de ]YYYY')
+  const describedTime = dayjs(schedulingDate).format('HH:mm[h]')
 
   return (
-    <Container isTimePickerOpen={isDateSelected}>
-      <Calendar selectedDate={selectedDate} onDateSelected={setSelectedDate} />
+    <ConfirmForm as="form" onSubmit={handleSubmit(handleConfirmScheduling)}>
+      <FormHeader>
+        <Text>
+          <CalendarBlank />
+          {describedDate}
+        </Text>
+        <Text>
+          <Clock />
+          {describedTime}
+        </Text>
+      </FormHeader>
 
-      {isDateSelected && (
-        <TimePicker>
-          <TimePickerHeader>
-            {weekDay} <span>{describedDate}</span>
-          </TimePickerHeader>
+      <label>
+        <Text size="sm">Nome completo</Text>
+        <TextInput
+          placeholder="Seu nome"
+          crossOrigin=""
+          {...register('name')}
+        />
+        {errors.name && <FormError size="sm">{errors.name.message}</FormError>}
+      </label>
 
-          <TimePickerList>
-            {availability?.possibleTimes.map((hour) => {
-              return (
-                <TimePickerItem
-                  key={hour}
-                  disabled={!availability.availableTimes.includes(hour)}
-                >
-                  {String(hour).padStart(2, '0')}:00h
-                </TimePickerItem>
-              )
-            })}
-          </TimePickerList>
-        </TimePicker>
-      )}
-    </Container>
+      <label>
+        <Text size="sm">Endereço de e-mail</Text>
+        <TextInput
+          type="email"
+          placeholder="johndoe@example.com"
+          crossOrigin=""
+          {...register('email')}
+        />
+        {errors.email && (
+          <FormError size="sm">{errors.email.message}</FormError>
+        )}
+      </label>
+
+      <label>
+        <Text size="sm">Observações</Text>
+        <TextArea {...register('observations')} />
+      </label>
+
+      <FormActions>
+        <Button type="button" variant="tertiary" onClick={onCancelConfirmation}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={isSubmitting}>
+          Confirmar
+        </Button>
+      </FormActions>
+    </ConfirmForm>
   )
 }
